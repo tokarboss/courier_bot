@@ -1,0 +1,21 @@
+# Секреты и ключи (Самое важное!)
+credentials.json
+.env
+*.pem
+*.key
+
+# Папки Python
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+.venv/
+env/
+
+# Файлы настроек редакторов
+.vscode/
+.idea/
+
+# Логи и кэш
+*.log
+.cache/

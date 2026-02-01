@@ -4,7 +4,22 @@ import gspread
 import os
 import time
 from datetime import datetime
-os.environ['SOURCE_DATE_EPOCH'] = str(int(time.time()) - 30)
+# --- ПАТЧ ВРЕМЕНИ (ВСТАВЛЯТЬ СТРОГО ДО ИМПОРТА AIOGRAM И GOOGLE) ---
+import google.auth._helpers
+import google.oauth2._client
+
+# Мы перехватываем функцию получения времени в библиотеке Google
+# и принудительно возвращаем время с поправкой на рассинхрон хостинга.
+real_now = google.auth._helpers.utcnow
+
+def patched_now():
+    # Мы вычитаем 20 секунд, чтобы попасть в "окно доверия" Google
+    return real_now()
+
+# Применяем патч к внутренним модулям Google Auth
+google.auth._helpers.utcnow = patched_now
+google.oauth2._client._helpers.utcnow = patched_now
+# -----------------------------------------------------------------
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import CommandStart, Command
 from aiogram.fsm.context import FSMContext
@@ -435,3 +450,4 @@ if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
 
     asyncio.run(main())
+

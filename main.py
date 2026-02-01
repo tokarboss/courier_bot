@@ -3,8 +3,7 @@ import logging
 import gspread
 import os
 import time
-from datetime import datetime, timedelta
-from google.oauth2 import service_account
+from datetime import datetime
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import CommandStart, Command
 from aiogram.fsm.context import FSMContext
@@ -18,21 +17,7 @@ from geopy.geocoders import Nominatim
 
 # --- БЛОК ДИАГНОСТИКИ ---
 print(f"--- ДИАГНОСТИКА ---")
-print(f"Системное время: {time.ctime()}")
-if os.path.exists("credentials.json"):
-    size = os.path.getsize("credentials.json")
-    print(f"Файл credentials.json найден. Размер: {size} байт")
-    try:
-        with open("credentials.json", "r") as f:
-            content = f.read()
-            if "-----BEGIN PRIVATE KEY-----" in content:
-                print("✅ Заголовок ключа найден")
-            else:
-                print("❌ ЗАГОЛОВОК КЛЮЧА НЕ НАЙДЕН!")
-    except Exception as e:
-        print(f"❌ Ошибка чтения файла: {e}")
-else:
-    print("❌ ФАЙЛ credentials.json НЕ НАЙДЕН")
+print(f"Системное время сервера: {time.ctime()}")
 print(f"-------------------")
 
 # --- НАСТРОЙКИ ---
@@ -56,17 +41,16 @@ class CourierForm(StatesGroup):
 class AdminStates(StatesGroup):
     mailing_text = State()
 
-# --- ЛОГИКА ТАБЛИЦ (ИСПРАВЛЕННАЯ СТАБИЛЬНАЯ АВТОРИЗАЦИЯ) ---
+# --- ЛОГИКА ТАБЛИЦ (БЕЗ ОШИБКИ REFRESH) ---
 def get_sheets():
-    # Используем встроенный метод gspread для работы через сервисный аккаунт
-    # Это самый надежный способ, который сам обрабатывает JWT
     try:
-        client = gspread.service_account(filename="credentials.json")
+        # Авторизация самым стабильным способом для серверов
+        # Мы убрали ручной creds.refresh(), который вызывал ошибку JWT
+        client = gspread.service_account(filename='credentials.json')
         spreadsheet = client.open(SHEET_NAME)
         
         main_sheet = spreadsheet.sheet1
         
-        # Функция-помощник для проверки листов
         def get_or_create_ws(name, headers):
             try:
                 return spreadsheet.worksheet(name)
@@ -79,17 +63,17 @@ def get_sheets():
         log_s = get_or_create_ws("Logs", ["Время", "Событие", "Детали", "Кто выполнил"])
         u_sheet = get_or_create_ws("Users", ["User ID", "Username"])
         
-        print("✅ Подключение к Google Таблицам успешно установлено.")
+        print("✅ Подключение к Google Таблицам успешно!")
         return main_sheet, bl_sheet, log_s, u_sheet
     except Exception as e:
-        print(f"❌ КРИТИЧЕСКАЯ ОШИБКА ПОДКЛЮЧЕНИЯ: {e}")
-        # Возвращаем None, чтобы бот не упал сразу, но вывел ошибку
-        return None, None, None, None
+        print(f"❌ ОШИБКА АВТОРИЗАЦИИ: {e}")
+        # Если даже этот метод не сработает, значит время на сервере сбито критически
+        raise e
 
-# Инициализация листов
+# Инициализация
 sheet, blacklist_sheet, log_sheet, users_sheet = get_sheets()
 
-# --- СЕРВИСНЫЕ ФУНКЦИИ ---
+# --- СЕРВИСНЫЕ ФУНКЦИИ (ТВОЙ КОД) ---
 
 def add_user_to_base(user_id, username):
     try:
@@ -180,7 +164,7 @@ async def distribute_lead(idx: int):
         sheet.update_cell(idx + 1, get_status_col(), f"В работе ({m_user})")
         add_log("Авто-распределение", f"Заявка №{idx}", m_user)
         
-        clean_phone = phone.replace('+', '').strip()
+        clean_phone = str(phone).replace('+', '').strip()
         kb = InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="💬 Написать", url=f"https://t.me/+{clean_phone}")],
             [InlineKeyboardButton(text="✅ ЛИД", callback_data=f"fin_{idx}_LID_{u_id}"), 
@@ -379,7 +363,7 @@ async def cb_take(callback: CallbackQuery):
     
     await callback.message.edit_text(f"🔴 ЗАЯВКА №{idx} В РАБОТЕ ({m_user})")
     
-    clean_phone = phone.replace('+', '').strip()
+    clean_phone = str(phone).replace('+', '').strip()
     kb = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="💬 Написать", url=f"https://t.me/+{clean_phone}")],
         [InlineKeyboardButton(text="✅ ЛИД", callback_data=f"fin_{idx}_LID_{u_id}"), 

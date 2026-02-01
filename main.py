@@ -1,6 +1,8 @@
 import asyncio
 import logging
 import gspread
+import os
+import time
 from datetime import datetime, timedelta
 from oauth2client.service_account import ServiceAccountCredentials
 from aiogram import Bot, Dispatcher, types, F
@@ -13,6 +15,25 @@ from aiogram.types import (
 )
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from geopy.geocoders import Nominatim
+
+# --- БЛОК ДИАГНОСТИКИ (ВЫПОЛНЯЕТСЯ ПРИ СТАРТЕ) ---
+print(f"--- ДИАГНОСТИКА ---")
+print(f"Системное время: {time.ctime()}")
+if os.path.exists("credentials.json"):
+    size = os.path.getsize("credentials.json")
+    print(f"Файл credentials.json найден. Размер: {size} байт")
+    try:
+        with open("credentials.json", "r") as f:
+            content = f.read()
+            if "-----BEGIN PRIVATE KEY-----" in content:
+                print("✅ Заголовок ключа найден")
+            else:
+                print("❌ ЗАГОЛОВОК КЛЮЧА НЕ НАЙДЕН! Файл поврежден или имеет неверный формат.")
+    except Exception as e:
+        print(f"❌ Ошибка чтения файла: {e}")
+else:
+    print("❌ ФАЙЛ credentials.json НЕ НАЙДЕН В КОРНЕВОЙ ПАПКЕ")
+print(f"-------------------")
 
 # --- НАСТРОЙКИ ---
 TOKEN = "8578056545:AAEWWP_JyQ2SDCFmQ-IwZhk-cfF0AozFYqo"
@@ -64,6 +85,7 @@ def get_sheets():
         
     return main_sheet, bl_sheet, log_s, u_sheet
 
+# Инициализация листов
 sheet, blacklist_sheet, log_sheet, users_sheet = get_sheets()
 
 # --- СЕРВИСНЫЕ ФУНКЦИИ ---
@@ -377,21 +399,17 @@ async def cb_fin(callback: CallbackQuery):
     st = "✅ ЛИД" if res == "LID" else "❌ НЕ ЛИД"
     m_user = f"@{callback.from_user.username}" if callback.from_user.username else callback.from_user.full_name
     
-    # Обновляем таблицу
     sheet.update_cell(int(idx) + 1, get_status_col(), f"{st} ({m_user})")
     add_log("Финиш", f"№{idx} {st}", m_user)
     
-    # УВЕДОМЛЕНИЕ В ГРУППУ
     emoji = "🎉" if res == "LID" else "📁"
     group_msg = f"{emoji} **Заявка №{idx} закрыта!**\nРезультат: {st}\nМенеджер: {m_user}"
     await bot.send_message(GROUP_ID, group_msg, parse_mode="Markdown")
     
-    # Уведомление курьеру
     if res == "LID":
         try: await bot.send_message(u_id, f"🎉 Одобрено! Обучение: {TRAINING_LINK}")
         except: pass
     
-    # Редактируем сообщение менеджера
     await callback.message.edit_text(f"🏁 Заявка №{idx} закрыта: {st}")
 
 # --- МЕНЕДЖЕРЫ ---

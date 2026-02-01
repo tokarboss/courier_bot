@@ -4,9 +4,7 @@ import gspread
 import os
 import time
 from datetime import datetime, timedelta
-# Заменяем старый oauth2client на новый google.auth для работы с временем
 from google.oauth2 import service_account
-from google.auth.transport.requests import Request
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import CommandStart, Command
 from aiogram.fsm.context import FSMContext
@@ -18,7 +16,7 @@ from aiogram.types import (
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from geopy.geocoders import Nominatim
 
-# --- БЛОК ДИАГНОСТИКИ (ВЫПОЛНЯЕТСЯ ПРИ СТАРТЕ) ---
+# --- БЛОК ДИАГНОСТИКИ ---
 print(f"--- ДИАГНОСТИКА ---")
 print(f"Системное время: {time.ctime()}")
 if os.path.exists("credentials.json"):
@@ -30,17 +28,17 @@ if os.path.exists("credentials.json"):
             if "-----BEGIN PRIVATE KEY-----" in content:
                 print("✅ Заголовок ключа найден")
             else:
-                print("❌ ЗАГОЛОВОК КЛЮЧА НЕ НАЙДЕН! Файл поврежден или имеет неверный формат.")
+                print("❌ ЗАГОЛОВОК КЛЮЧА НЕ НАЙДЕН!")
     except Exception as e:
         print(f"❌ Ошибка чтения файла: {e}")
 else:
-    print("❌ ФАЙЛ credentials.json НЕ НАЙДЕН В КОРНЕВОЙ ПАПКЕ")
+    print("❌ ФАЙЛ credentials.json НЕ НАЙДЕН")
 print(f"-------------------")
 
 # --- НАСТРОЙКИ ---
 TOKEN = "8578056545:AAEWWP_JyQ2SDCFmQ-IwZhk-cfF0AozFYqo"
 GROUP_ID = -1003891823517  
-ADMIN_ID = 5859374128  # Твой ID
+ADMIN_ID = 5859374128  
 SHEET_NAME = "Заявки Курьеры Яндекс Еда"
 TRAINING_LINK = "https://t.me/your_training_bot_or_channel" 
 PARTNER_LINK = "https://clck.ru/3RZuNV" 
@@ -58,45 +56,35 @@ class CourierForm(StatesGroup):
 class AdminStates(StatesGroup):
     mailing_text = State()
 
-# --- ЛОГИКА ТАБЛИЦ (С ПОДМЕНОЙ ВРЕМЕНИ) ---
+# --- ЛОГИКА ТАБЛИЦ (ИСПРАВЛЕННАЯ СТАБИЛЬНАЯ АВТОРИЗАЦИЯ) ---
 def get_sheets():
-    scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
-    
-    # ЛОГИКА ПОДМЕНЫ/СИНХРОНИЗАЦИИ ВРЕМЕНИ:
-    # Используем service_account.Credentials вместо oauth2client
-    creds = service_account.Credentials.from_service_account_file(
-        "credentials.json", scopes=scope
-    )
-    
-    # Принудительно запрашиваем обновление, чтобы синхронизироваться с Google, 
-    # даже если системные часы сервера спешат или отстают
-    auth_request = Request()
-    creds.refresh(auth_request)
-    
-    client = gspread.authorize(creds)
-    spreadsheet = client.open(SHEET_NAME)
-    
-    main_sheet = spreadsheet.sheet1
-    
+    # Используем встроенный метод gspread для работы через сервисный аккаунт
+    # Это самый надежный способ, который сам обрабатывает JWT
     try:
-        bl_sheet = spreadsheet.worksheet("Blacklist")
-    except:
-        bl_sheet = spreadsheet.add_worksheet(title="Blacklist", rows="1000", cols="3")
-        bl_sheet.append_row(["User ID", "Username", "Date"])
-    
-    try:
-        log_s = spreadsheet.worksheet("Logs")
-    except:
-        log_s = spreadsheet.add_worksheet(title="Logs", rows="5000", cols="4")
-        log_s.append_row(["Время", "Событие", "Детали", "Кто выполнил"])
-
-    try:
-        u_sheet = spreadsheet.worksheet("Users")
-    except:
-        u_sheet = spreadsheet.add_worksheet(title="Users", rows="10000", cols="2")
-        u_sheet.append_row(["User ID", "Username"])
+        client = gspread.service_account(filename="credentials.json")
+        spreadsheet = client.open(SHEET_NAME)
         
-    return main_sheet, bl_sheet, log_s, u_sheet
+        main_sheet = spreadsheet.sheet1
+        
+        # Функция-помощник для проверки листов
+        def get_or_create_ws(name, headers):
+            try:
+                return spreadsheet.worksheet(name)
+            except:
+                ws = spreadsheet.add_worksheet(title=name, rows="5000", cols=str(len(headers)))
+                ws.append_row(headers)
+                return ws
+
+        bl_sheet = get_or_create_ws("Blacklist", ["User ID", "Username", "Date"])
+        log_s = get_or_create_ws("Logs", ["Время", "Событие", "Детали", "Кто выполнил"])
+        u_sheet = get_or_create_ws("Users", ["User ID", "Username"])
+        
+        print("✅ Подключение к Google Таблицам успешно установлено.")
+        return main_sheet, bl_sheet, log_s, u_sheet
+    except Exception as e:
+        print(f"❌ КРИТИЧЕСКАЯ ОШИБКА ПОДКЛЮЧЕНИЯ: {e}")
+        # Возвращаем None, чтобы бот не упал сразу, но вывел ошибку
+        return None, None, None, None
 
 # Инициализация листов
 sheet, blacklist_sheet, log_sheet, users_sheet = get_sheets()

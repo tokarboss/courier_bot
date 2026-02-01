@@ -4,6 +4,7 @@ import gspread
 import os
 import time
 from datetime import datetime
+os.environ['SOURCE_DATE_EPOCH'] = str(int(time.time()) - 30)
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import CommandStart, Command
 from aiogram.fsm.context import FSMContext
@@ -432,4 +433,5 @@ async def main():
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
+
     asyncio.run(main())

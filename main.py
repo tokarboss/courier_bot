@@ -4,7 +4,9 @@ import gspread
 import os
 import time
 from datetime import datetime, timedelta
-from oauth2client.service_account import ServiceAccountCredentials
+# Заменяем старый oauth2client на новый google.auth для работы с временем
+from google.oauth2 import service_account
+from google.auth.transport.requests import Request
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import CommandStart, Command
 from aiogram.fsm.context import FSMContext
@@ -56,10 +58,21 @@ class CourierForm(StatesGroup):
 class AdminStates(StatesGroup):
     mailing_text = State()
 
-# --- ЛОГИКА ТАБЛИЦ ---
+# --- ЛОГИКА ТАБЛИЦ (С ПОДМЕНОЙ ВРЕМЕНИ) ---
 def get_sheets():
     scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
-    creds = ServiceAccountCredentials.from_json_keyfile_name("credentials.json", scope)
+    
+    # ЛОГИКА ПОДМЕНЫ/СИНХРОНИЗАЦИИ ВРЕМЕНИ:
+    # Используем service_account.Credentials вместо oauth2client
+    creds = service_account.Credentials.from_service_account_file(
+        "credentials.json", scopes=scope
+    )
+    
+    # Принудительно запрашиваем обновление, чтобы синхронизироваться с Google, 
+    # даже если системные часы сервера спешат или отстают
+    auth_request = Request()
+    creds.refresh(auth_request)
+    
     client = gspread.authorize(creds)
     spreadsheet = client.open(SHEET_NAME)
     
